@@ -191,11 +191,7 @@ const Header = () => {
         }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
                 <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
-<<<<<<< HEAD
                     {userRole === 'executive' ? 'TUTOR' : userRole === 'manager' ? 'MENTOR' : (userRole ? userRole.toUpperCase() : 'DASHBOARD')}
-=======
-                    {userRole === 'executive' ? 'TUTOR' : (userRole ? userRole.toUpperCase() : 'DASHBOARD')}
->>>>>>> ec6337d (New changes on perfromance reviews)
                 </h2>
             </div>
 
