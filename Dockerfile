@@ -1,10 +1,23 @@
-## Multi‑stage Dockerfile for Vite + Nginx
+## Multi-stage Dockerfile for Vite + Nginx
 # ---------- Build Stage ----------
 FROM node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
+
+# Copy source code
 COPY . ./
+
+# --- VITE BUILD ARGUMENTS ---
+# Accept variables from docker-compose
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+
+# Set them as environment variables so 'npm run build' can see them
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+# ----------------------------
+
 # Build the Vite app (outputs to /app/dist)
 RUN npm run build
 
