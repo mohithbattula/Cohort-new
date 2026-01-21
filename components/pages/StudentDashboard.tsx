@@ -19,6 +19,14 @@ import { UserProvider } from '../employee/context/UserContext';
 // @ts-ignore
 import { ProjectProvider } from '../employee/context/ProjectContext';
 // @ts-ignore
+import { UserProvider as ExecutiveUserProvider } from '../executive/context/UserContext';
+// @ts-ignore
+import { ToastProvider as ExecutiveToastProvider } from '../executive/context/ToastContext';
+// @ts-ignore
+import { UserProvider as ManagerUserProvider } from '../manager/context/UserContext';
+// @ts-ignore
+import { ToastProvider as ManagerToastProvider } from '../manager/context/ToastContext';
+// @ts-ignore
 import MyTasksPage from '../employee/pages/MyTasksPage';
 // @ts-ignore
 import TeamTasksPage from '../employee/pages/TeamTasksPage';
@@ -26,47 +34,58 @@ import TeamTasksPage from '../employee/pages/TeamTasksPage';
 import TeamPerformance from '../employee/pages/TeamPerformance';
 // @ts-ignore
 import MyReviewPage from '../employee/pages/MyReviewPage';
+// @ts-ignore
+import LeaderboardPage from '../shared/pages/LeaderboardPage';
 import RoleGuard from '../shared/RoleGuard';
 import '../employee/index.css';
 
 export const StudentDashboard = () => {
     return (
         <RoleGuard allowedRoles={['employee']}>
-            <UserProvider>
-                <ProjectProvider>
-                    <ToastProvider>
-                        <Layout>
-                            <Routes>
-                                <Route path="/" element={<Navigate to="dashboard" replace />} />
-                                <Route path="dashboard" element={<DashboardHome />} />
-                                <Route path="analytics" element={<ModulePage title="My Analytics" type="analytics" />} />
-                                <Route path="documents" element={<ModulePage title="Project Documents" type="project-documents" />} />
-                                {/* Real Task Routes */}
-                                <Route path="my-tasks" element={<MyTasksPage />} />
-                                <Route path="team-tasks" element={<TeamTasksPage />} />
-                                <Route path="team-members" element={<ModulePage title="Team Members" type="workforce" />} />
+            <ExecutiveUserProvider>
+                <ExecutiveToastProvider>
+                    <ManagerUserProvider>
+                        <ManagerToastProvider>
+                            <UserProvider>
+                                <ProjectProvider>
+                                    <ToastProvider>
+                                        <Layout>
+                                            <Routes>
+                                                <Route path="/" element={<Navigate to="dashboard" replace />} />
+                                                <Route path="dashboard" element={<DashboardHome />} />
+                                                <Route path="analytics" element={<ModulePage title="My Analytics" type="analytics" />} />
+                                                <Route path="documents" element={<ModulePage title="Project Documents" type="project-documents" />} />
+                                                {/* Real Task Routes */}
+                                                <Route path="my-tasks" element={<MyTasksPage />} />
+                                                <Route path="team-tasks" element={<TeamTasksPage />} />
+                                                <Route path="team-members" element={<ModulePage title="Team Members" type="workforce" />} />
 
-                                <Route path="leaves" element={<ModulePage title="Leave Requests" type="leaves" />} />
-                                <Route path="team-status" element={<ModulePage title="Your Status" type="status" />} />
-                                <Route path="payslips" element={<ModulePage title="Your Payslip" type="payroll" />} />
-                                <Route path="policies" element={<ModulePage title="Policies" type="policies" />} />
-                                <Route path="hierarchy" element={<ModulePage title="Organizational Hierarchy" type="default" />} />
-                                <Route path="org-hierarchy" element={<OrgHierarchy />} />
-                                <Route path="project-hierarchy" element={<ModulePage title="Project Hierarchy" type="default" />} />
-                                <Route path="messages" element={<MessagingHub />} />
-                                <Route path="announcements" element={<ModulePage title="Announcements" type="default" />} />
-                                <Route path="raise-ticket" element={<RaiseTicketPage />} />
-                                <Route path="settings" element={<ModulePage title="Settings" type="default" />} />
-                                { /* Role-specific routes for Team Lead and Manager */}
-                                <Route path="approve-leaves" element={<ModulePage title="Approve Leaves" type="leaves" />} />
-                                <Route path="manage-members" element={<ModulePage title="Manage Members" type="workforce" />} />
-                                <Route path="performance" element={<TeamPerformance />} />
-                                <Route path="my-review" element={<MyReviewPage />} />
-                            </Routes>
-                        </Layout>
-                    </ToastProvider>
-                </ProjectProvider>
-            </UserProvider>
+                                                <Route path="leaves" element={<ModulePage title="Leave Requests" type="leaves" />} />
+                                                <Route path="team-status" element={<ModulePage title="Your Status" type="status" />} />
+                                                <Route path="payslips" element={<ModulePage title="Your Payslip" type="payroll" />} />
+                                                <Route path="policies" element={<ModulePage title="Policies" type="policies" />} />
+                                                <Route path="hierarchy" element={<ModulePage title="Organizational Hierarchy" type="default" />} />
+                                                <Route path="org-hierarchy" element={<OrgHierarchy />} />
+                                                <Route path="project-hierarchy" element={<ModulePage title="Project Hierarchy" type="default" />} />
+                                                <Route path="messages" element={<MessagingHub />} />
+                                                <Route path="announcements" element={<ModulePage title="Announcements" type="default" />} />
+                                                <Route path="raise-ticket" element={<RaiseTicketPage />} />
+                                                <Route path="settings" element={<ModulePage title="Settings" type="default" />} />
+                                                { /* Role-specific routes for Team Lead and Manager */}
+                                                <Route path="approve-leaves" element={<ModulePage title="Approve Leaves" type="leaves" />} />
+                                                <Route path="manage-members" element={<ModulePage title="Manage Members" type="workforce" />} />
+                                                <Route path="performance" element={<TeamPerformance />} />
+                                                <Route path="my-review" element={<MyReviewPage />} />
+                                                <Route path="rankings" element={<LeaderboardPage />} />
+                                            </Routes>
+                                        </Layout>
+                                    </ToastProvider>
+                                </ProjectProvider>
+                            </UserProvider>
+                        </ManagerToastProvider>
+                    </ManagerUserProvider>
+                </ExecutiveToastProvider>
+            </ExecutiveUserProvider>
         </RoleGuard>
     );
 };

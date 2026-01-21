@@ -60,9 +60,9 @@ export default function SoftSkillsSection({
         return () => clearTimeout(timer)
     }, [showConfetti])
 
-    // ✅ Keep first 10
+    // ✅ Show all traits passed from parent
     const traits = useMemo(() => {
-        return Array.isArray(softSkillsTraits) ? softSkillsTraits.slice(0, 10) : []
+        return Array.isArray(softSkillsTraits) ? softSkillsTraits : []
     }, [softSkillsTraits])
 
     return (

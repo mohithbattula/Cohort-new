@@ -1,18 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Users, ClipboardList, Star, TrendingUp, Award,
-    Save, Search, ChevronRight, Loader2, X
+    Award, Search, ChevronRight, ChevronLeft, Loader2, X, Calendar
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabaseClient';
 import { useUser } from '../context/UserContext';
 import { useToast } from '../context/ToastContext';
-import { upsertTaskReview, getStudentTasksWithReviews } from '@/services/reviews/studentTaskReviews';
 
 const SOFT_SKILL_TRAITS = [
     "Accountability", "Learnability", "Abstract Thinking", "Curiosity", "Second-Order Thinking",
     "Compliance", "Ambitious", "Communication", "English", "First-Principle Thinking"
 ];
 
+const DEVELOPMENT_SKILL_TRAITS = [
+    "Frontend", "Backend", "Workflows", "Databases", "Prompting",
+    "Non-popular LLMs", "Fine-tuning", "Data Labelling", "Content Generation"
+];
+
+/**
+ * StudentReviewPage - Weekly/Monthly Skills Assessment
+ * 
+ * This page is for assessing student skills:
+ * - Soft Skills (10 traits)
+ * - Development Skills (9 traits)
+ * 
+ * Skills are assessed per week or month, NOT per task.
+ * Task-specific reviews are handled in TaskReviewPage.
+ */
 const StudentReviewPage = () => {
     const { userId, userRole, teamId } = useUser();
     const { addToast } = useToast();
@@ -22,20 +35,65 @@ const StudentReviewPage = () => {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [saving, setSaving] = useState(false);
-    const [isReadOnly, setIsReadOnly] = useState(false);
+
+    // Period State
+    const [periodType, setPeriodType] = useState<'weekly' | 'monthly'>('weekly');
+    const [selectedWeek, setSelectedWeek] = useState<Date>(getWeekStart(new Date()));
 
     // Modal State
     const [showModal, setShowModal] = useState(false);
     const [selectedStudent, setSelectedStudent] = useState<any>(null);
-    const [studentTasks, setStudentTasks] = useState<any[]>([]);
+    const [existingAssessment, setExistingAssessment] = useState<any>(null);
+    const [loadingAssessment, setLoadingAssessment] = useState(false);
 
-    // Form State (for Modal)
-    const [selectedTask, setSelectedTask] = useState<any>(null);
-    const [taskScore, setTaskScore] = useState(0);
-    const [taskReview, setTaskReview] = useState('');
-    const [taskImprovements, setTaskImprovements] = useState('');
-    const [taskSoftSkillsScore, setTaskSoftSkillsScore] = useState(0);
-    const [taskTraitScores, setTaskTraitScores] = useState<Record<string, number>>({});
+    // Skills Form State
+    const [softSkillScores, setSoftSkillScores] = useState<Record<string, number>>({});
+    const [softSkillEnabled, setSoftSkillEnabled] = useState<Record<string, boolean>>({});
+    const [softSkillsAvg, setSoftSkillsAvg] = useState(0);
+
+    const [devSkillScores, setDevSkillScores] = useState<Record<string, number>>({});
+    const [devSkillEnabled, setDevSkillEnabled] = useState<Record<string, boolean>>({});
+    const [devSkillsAvg, setDevSkillsAvg] = useState(0);
+
+    // Helper function to get Monday of the week
+    function getWeekStart(date: Date): Date {
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Sunday
+        return new Date(d.setDate(diff));
+    }
+
+    // Helper function to get Sunday of the week
+    function getWeekEnd(date: Date): Date {
+        const weekStart = getWeekStart(date);
+        return new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+    }
+
+    // Format date for display
+    function formatWeekRange(weekStart: Date): string {
+        const weekEnd = getWeekEnd(weekStart);
+        const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+        return `${weekStart.toLocaleDateString('en-US', options)} - ${weekEnd.toLocaleDateString('en-US', options)}`;
+    }
+
+    // Navigate weeks
+    const goToPreviousWeek = () => {
+        setSelectedWeek(new Date(selectedWeek.getTime() - 7 * 24 * 60 * 60 * 1000));
+    };
+
+    const goToNextWeek = () => {
+        const nextWeek = new Date(selectedWeek.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const currentWeek = getWeekStart(new Date());
+        if (nextWeek <= currentWeek) {
+            setSelectedWeek(nextWeek);
+        }
+    };
+
+    const goToCurrentWeek = () => {
+        setSelectedWeek(getWeekStart(new Date()));
+    };
+
+    const isCurrentWeek = selectedWeek.getTime() === getWeekStart(new Date()).getTime();
 
     useEffect(() => {
         fetchStudents();
@@ -47,7 +105,7 @@ const StudentReviewPage = () => {
             let query = supabase
                 .from('profiles')
                 .select('*')
-                .in('role', ['employee', 'manager']);
+                .in('role', ['employee', 'manager', 'team_lead', 'executive']);
 
             if (userRole === 'manager' && teamId) {
                 query = query.eq('team_id', teamId);
@@ -72,87 +130,181 @@ const StudentReviewPage = () => {
     const handleStudentClick = async (student: any) => {
         setSelectedStudent(student);
         setShowModal(true);
-        setStudentTasks([]);
+        setExistingAssessment(null);
 
-        // Reset form states
-        setSelectedTask(null);
-        setTaskScore(0);
-        setTaskReview('');
-        setTaskImprovements('');
-        setIsReadOnly(false);
-        setTaskSoftSkillsScore(0);
-        setTaskTraitScores({});
+        // Reset form
+        const initialSoftScores: Record<string, number> = {};
+        const initialSoftEnabled: Record<string, boolean> = {};
+        SOFT_SKILL_TRAITS.forEach(t => {
+            initialSoftScores[t] = 0;
+            initialSoftEnabled[t] = true;
+        });
+        setSoftSkillScores(initialSoftScores);
+        setSoftSkillEnabled(initialSoftEnabled);
+        setSoftSkillsAvg(0);
 
-        // Fetch tasks
+        const initialDevScores: Record<string, number> = {};
+        const initialDevEnabled: Record<string, boolean> = {};
+        DEVELOPMENT_SKILL_TRAITS.forEach(t => {
+            initialDevScores[t] = 0;
+            initialDevEnabled[t] = true;
+        });
+        setDevSkillScores(initialDevScores);
+        setDevSkillEnabled(initialDevEnabled);
+        setDevSkillsAvg(0);
+
+        // Fetch existing assessment for this period
+        setLoadingAssessment(true);
         try {
-            const tasksData = await getStudentTasksWithReviews(student.id);
-            setStudentTasks(tasksData || []);
+            const periodStart = selectedWeek.toISOString().split('T')[0];
+
+            const { data, error } = await supabase
+                .from('student_skills_assessments')
+                .select('*')
+                .eq('student_id', student.id)
+                .eq('period_type', periodType)
+                .eq('period_start', periodStart)
+                .single();
+
+            if (data && !error) {
+                setExistingAssessment(data);
+
+                // Process Soft Skills
+                const savedSoftTraits = data.soft_skill_traits || {};
+                const newSoftScores = { ...initialSoftScores };
+                const newSoftEnabled: Record<string, boolean> = {};
+                SOFT_SKILL_TRAITS.forEach(t => {
+                    if (savedSoftTraits[t] !== undefined && savedSoftTraits[t] !== null) {
+                        newSoftScores[t] = savedSoftTraits[t];
+                        newSoftEnabled[t] = true;
+                    } else {
+                        newSoftEnabled[t] = false;
+                    }
+                });
+                setSoftSkillScores(newSoftScores);
+                setSoftSkillEnabled(newSoftEnabled);
+                setSoftSkillsAvg(data.soft_skills_score || 0);
+
+                // Process Dev Skills
+                const savedDevTraits = data.development_skill_traits || {};
+                const newDevScores = { ...initialDevScores };
+                const newDevEnabled: Record<string, boolean> = {};
+                DEVELOPMENT_SKILL_TRAITS.forEach(t => {
+                    if (savedDevTraits[t] !== undefined && savedDevTraits[t] !== null) {
+                        newDevScores[t] = savedDevTraits[t];
+                        newDevEnabled[t] = true;
+                    } else {
+                        newDevEnabled[t] = false;
+                    }
+                });
+                setDevSkillScores(newDevScores);
+                setDevSkillEnabled(newDevEnabled);
+                setDevSkillsAvg(data.development_skills_score || 0);
+            }
         } catch (error) {
-            console.error('Error fetching student details:', error);
-            addToast('Failed to fetch student details', 'error');
+            // No existing assessment - that's fine
+        } finally {
+            setLoadingAssessment(false);
         }
     };
 
-    const handleTaskSelect = (task: any) => {
-        setSelectedTask(task);
-        // Single review per task model
-        const review = task.student_task_reviews?.[0] || {};
-
-        // Manager cannot edit Executive reviews
-        const locked = userRole === 'manager' && review.reviewer_role === 'executive';
-        setIsReadOnly(locked);
-
-        setTaskScore(review.score || 0);
-        setTaskSoftSkillsScore(review.soft_skills_score || 0);
-        setTaskTraitScores(review.soft_skill_traits || {});
-        setTaskReview(review.review || '');
-        setTaskImprovements(review.improvements || '');
+    const calculateSoftSkillsAvg = (scores: Record<string, number>, enabled: Record<string, boolean>) => {
+        let total = 0;
+        let count = 0;
+        SOFT_SKILL_TRAITS.forEach(t => {
+            if (enabled[t]) {
+                total += (scores[t] || 0);
+                count++;
+            }
+        });
+        return count > 0 ? parseFloat((total / count).toFixed(1)) : 0;
     };
 
-    const handleSaveTaskReview = async (e: React.FormEvent) => {
+    const calculateDevSkillsAvg = (scores: Record<string, number>, enabled: Record<string, boolean>) => {
+        let total = 0;
+        let count = 0;
+        DEVELOPMENT_SKILL_TRAITS.forEach(t => {
+            if (enabled[t]) {
+                total += (scores[t] || 0);
+                count++;
+            }
+        });
+        return count > 0 ? parseFloat((total / count).toFixed(1)) : 0;
+    };
+
+    const toggleSoftSkill = (trait: string) => {
+        const newEnabled = { ...softSkillEnabled, [trait]: !softSkillEnabled[trait] };
+        setSoftSkillEnabled(newEnabled);
+        setSoftSkillsAvg(calculateSoftSkillsAvg(softSkillScores, newEnabled));
+    };
+
+    const toggleDevSkill = (trait: string) => {
+        const newEnabled = { ...devSkillEnabled, [trait]: !devSkillEnabled[trait] };
+        setDevSkillEnabled(newEnabled);
+        setDevSkillsAvg(calculateDevSkillsAvg(devSkillScores, newEnabled));
+    };
+
+    const handleSoftSkillChange = (trait: string, value: number) => {
+        const newScores = { ...softSkillScores, [trait]: value };
+        setSoftSkillScores(newScores);
+        setSoftSkillsAvg(calculateSoftSkillsAvg(newScores, softSkillEnabled));
+    };
+
+    const handleDevSkillChange = (trait: string, value: number) => {
+        const newScores = { ...devSkillScores, [trait]: value };
+        setDevSkillScores(newScores);
+        setDevSkillsAvg(calculateDevSkillsAvg(newScores, devSkillEnabled));
+    };
+
+    const handleSaveAssessment = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedStudent || !selectedTask || !userId) return;
+        if (!selectedStudent || !userId) return;
 
         setSaving(true);
         try {
-            await upsertTaskReview({
+            const periodStart = selectedWeek.toISOString().split('T')[0];
+            const weekEnd = getWeekEnd(selectedWeek);
+            const periodEnd = weekEnd.toISOString().split('T')[0];
+
+            // Prepare traits (only store checked ones)
+            const softTraitsToSave: Record<string, number | null> = {};
+            SOFT_SKILL_TRAITS.forEach(t => {
+                softTraitsToSave[t] = softSkillEnabled[t] ? softSkillScores[t] : null;
+            });
+
+            const devTraitsToSave: Record<string, number | null> = {};
+            DEVELOPMENT_SKILL_TRAITS.forEach(t => {
+                devTraitsToSave[t] = devSkillEnabled[t] ? devSkillScores[t] : null;
+            });
+
+            const assessmentData = {
                 student_id: selectedStudent.id,
-                task_id: selectedTask.id,
-                score: taskScore,
-                soft_skills_score: taskSoftSkillsScore,
-                review: taskReview,
-                improvements: taskImprovements,
                 reviewer_id: userId,
-                reviewer_role: userRole as 'executive' | 'manager',
-                soft_skill_traits: taskTraitScores
-            });
+                reviewer_role: userRole,
+                period_type: periodType,
+                period_start: periodStart,
+                period_end: periodEnd,
+                soft_skill_traits: softTraitsToSave,
+                soft_skills_score: softSkillsAvg,
+                development_skill_traits: devTraitsToSave,
+                development_skills_score: devSkillsAvg,
+                updated_at: new Date().toISOString()
+            };
 
-            addToast('Review saved successfully', 'success');
+            const { error } = await supabase
+                .from('student_skills_assessments')
+                .upsert(assessmentData, {
+                    onConflict: 'student_id,period_type,period_start'
+                });
 
-            const updatedTasks = studentTasks.map(t => {
-                if (t.id === selectedTask.id) {
-                    const newReview = {
-                        reviewer_id: userId,
-                        reviewer_role: userRole,
-                        score: taskScore,
-                        soft_skills_score: taskSoftSkillsScore,
-                        review: taskReview,
-                        improvements: taskImprovements,
-                        soft_skill_traits: taskTraitScores
-                    };
+            if (error) throw error;
 
-                    return {
-                        ...t,
-                        student_task_reviews: [newReview]
-                    };
-                }
-                return t;
-            });
-            setStudentTasks(updatedTasks);
+            addToast('Skills assessment saved successfully', 'success');
+            setExistingAssessment({ ...existingAssessment, ...assessmentData });
 
         } catch (error) {
-            console.error('Error saving task review:', error);
-            addToast('Failed to save review', 'error');
+            console.error('Error saving skills assessment:', error);
+            addToast('Failed to save skills assessment', 'error');
         } finally {
             setSaving(false);
         }
@@ -163,16 +315,129 @@ const StudentReviewPage = () => {
         (s.email || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    const getRoleLabel = (role: string) => {
+        switch (role) {
+            case 'employee': return 'Student';
+            case 'manager': return 'Mentor';
+            case 'executive': return 'Tutor';
+            case 'team_lead': return 'Team Lead';
+            default: return role;
+        }
+    };
+
     return (
         <div className="flex flex-col h-full bg-[#f8fafc] p-6 lg:p-8" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
             {/* Header */}
-            <div className="flex justify-between items-center mb-8">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
                 <div>
-                    <h1 style={{ fontSize: '2rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '8px' }}>Student Review</h1>
-                    <p style={{ color: '#64748b' }}>Track performance across tasks</p>
+                    <h1 style={{ fontSize: '2rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>Student Review</h1>
+                    <p style={{ color: '#64748b' }}>Assess student skills on a weekly or monthly basis</p>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <div style={{ position: 'relative', width: '300px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                    {/* Period Type Toggle */}
+                    <div style={{
+                        display: 'flex',
+                        backgroundColor: '#f1f5f9',
+                        borderRadius: '12px',
+                        padding: '4px'
+                    }}>
+                        <button
+                            onClick={() => setPeriodType('weekly')}
+                            style={{
+                                padding: '8px 20px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                backgroundColor: periodType === 'weekly' ? '#8b5cf6' : 'transparent',
+                                color: periodType === 'weekly' ? 'white' : '#64748b',
+                                fontWeight: '600',
+                                fontSize: '0.85rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease'
+                            }}
+                        >
+                            Weekly
+                        </button>
+                        <button
+                            onClick={() => setPeriodType('monthly')}
+                            style={{
+                                padding: '8px 20px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                backgroundColor: periodType === 'monthly' ? '#8b5cf6' : 'transparent',
+                                color: periodType === 'monthly' ? 'white' : '#64748b',
+                                fontWeight: '600',
+                                fontSize: '0.85rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease'
+                            }}
+                        >
+                            Monthly
+                        </button>
+                    </div>
+
+                    {/* Week Navigator */}
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        backgroundColor: '#fff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '12px',
+                        padding: '4px 8px'
+                    }}>
+                        <button
+                            onClick={goToPreviousWeek}
+                            style={{
+                                padding: '6px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                backgroundColor: 'transparent',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <ChevronLeft size={18} color="#64748b" />
+                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Calendar size={16} color="#8b5cf6" />
+                            <span style={{ fontWeight: '600', fontSize: '0.9rem', color: '#1e293b', minWidth: '140px', textAlign: 'center' }}>
+                                {formatWeekRange(selectedWeek)}
+                            </span>
+                        </div>
+                        <button
+                            onClick={goToNextWeek}
+                            disabled={isCurrentWeek}
+                            style={{
+                                padding: '6px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                backgroundColor: 'transparent',
+                                cursor: isCurrentWeek ? 'not-allowed' : 'pointer',
+                                opacity: isCurrentWeek ? 0.3 : 1
+                            }}
+                        >
+                            <ChevronRight size={18} color="#64748b" />
+                        </button>
+                        {!isCurrentWeek && (
+                            <button
+                                onClick={goToCurrentWeek}
+                                style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    border: 'none',
+                                    backgroundColor: '#8b5cf6',
+                                    color: 'white',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '600',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Today
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Search */}
+                    <div style={{ position: 'relative', width: '250px' }}>
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
                         <input
                             type="text"
@@ -190,7 +455,6 @@ const StudentReviewPage = () => {
                             }}
                         />
                     </div>
-
                 </div>
             </div>
 
@@ -204,12 +468,12 @@ const StudentReviewPage = () => {
 
                 {loading ? (
                     <div className="flex justify-center py-12">
-                        <Loader2 className="animate-spin text-blue-500" size={32} />
+                        <Loader2 className="animate-spin text-purple-500" size={32} />
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         {filteredStudents.length === 0 ? (
-                            <div className="text-center py-12 text-gray-400">No students found matching your criteria</div>
+                            <div className="text-center py-12 text-gray-400">No students found</div>
                         ) : (
                             filteredStudents.map((student, index) => (
                                 <div
@@ -228,36 +492,27 @@ const StudentReviewPage = () => {
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
                                     }}
                                     onMouseEnter={(e) => {
-                                        e.currentTarget.style.borderColor = '#3b82f6';
+                                        e.currentTarget.style.borderColor = '#8b5cf6';
                                         e.currentTarget.style.transform = 'translateY(-1px)';
-                                        e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.05)';
                                     }}
                                     onMouseLeave={(e) => {
                                         e.currentTarget.style.borderColor = '#e2e8f0';
                                         e.currentTarget.style.transform = 'none';
-                                        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
                                     }}
                                 >
                                     <div style={{
-                                        width: '32px',
-                                        height: '32px',
-                                        borderRadius: '50%',
-                                        backgroundColor: '#f1f5f9',
-                                        color: '#64748b',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        fontWeight: 'bold',
-                                        flexShrink: 0
+                                        width: '32px', height: '32px', borderRadius: '50%',
+                                        backgroundColor: '#f3e8ff', color: '#8b5cf6',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        fontWeight: 'bold', flexShrink: 0
                                     }}>
                                         {index + 1}
                                     </div>
                                     <div style={{
                                         width: '48px', height: '48px', borderRadius: '50%',
-                                        backgroundColor: '#eff6ff', color: '#3b82f6',
+                                        backgroundColor: '#f3e8ff', color: '#8b5cf6',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        fontWeight: 'bold', fontSize: '1.2rem',
-                                        flexShrink: 0
+                                        fontWeight: 'bold', fontSize: '1.2rem', flexShrink: 0
                                     }}>
                                         {student.full_name?.charAt(0) || 'S'}
                                     </div>
@@ -266,17 +521,13 @@ const StudentReviewPage = () => {
                                         <p style={{ fontSize: '0.9rem', color: '#64748b' }}>{student.email}</p>
                                     </div>
                                     <div style={{
-                                        padding: '4px 12px',
-                                        borderRadius: '20px',
-                                        backgroundColor: '#f1f5f9',
-                                        color: '#64748b',
-                                        fontSize: '0.85rem',
-                                        fontWeight: '500',
-                                        textTransform: 'capitalize'
+                                        padding: '4px 12px', borderRadius: '20px',
+                                        backgroundColor: '#f3e8ff', color: '#8b5cf6',
+                                        fontSize: '0.85rem', fontWeight: '500'
                                     }}>
-                                        {student.role === 'employee' ? 'Student' : (student.role === 'manager' ? 'Mentor' : student.role)}
+                                        {getRoleLabel(student.role)}
                                     </div>
-                                    <ChevronRight size={20} color="#cbd5e1" />
+                                    <Award size={20} color="#8b5cf6" />
                                 </div>
                             ))
                         )}
@@ -284,7 +535,7 @@ const StudentReviewPage = () => {
                 )}
             </div>
 
-            {/* Modal for Review */}
+            {/* Modal for Skills Assessment */}
             {showModal && selectedStudent && (
                 <div style={{
                     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -294,160 +545,177 @@ const StudentReviewPage = () => {
                 }}>
                     <div style={{
                         backgroundColor: '#fff', borderRadius: '20px', width: '100%',
-                        maxWidth: '700px', // Reduced width
-                        maxHeight: '85vh', // Reduced height
+                        maxWidth: '700px',
+                        maxHeight: '90vh',
                         display: 'flex', flexDirection: 'column',
                         overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
                     }}>
-                        <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f3e8ff' }}>
                             <div>
-                                {/* Enforce visibility with specific styling */}
                                 <h2 style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#1e293b', lineHeight: '1.2' }}>
-                                    Review: {selectedStudent.full_name}
+                                    Skills Assessment: {selectedStudent.full_name}
                                 </h2>
-                                <p style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '4px' }}>
-                                    Select a task to grade
-                                </p>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                                    <Calendar size={14} color="#8b5cf6" />
+                                    <span style={{ color: '#8b5cf6', fontSize: '0.9rem', fontWeight: '600' }}>
+                                        {formatWeekRange(selectedWeek)}
+                                    </span>
+                                    {existingAssessment && (
+                                        <span style={{ fontSize: '0.75rem', backgroundColor: '#10b981', color: 'white', padding: '2px 8px', borderRadius: '4px' }}>
+                                            Previously Saved
+                                        </span>
+                                    )}
+                                </div>
                             </div>
-                            <button onClick={() => setShowModal(false)} style={{ padding: '8px', borderRadius: '50%', border: 'none', cursor: 'pointer', backgroundColor: '#f1f5f9' }}>
+                            <button onClick={() => setShowModal(false)} style={{ padding: '8px', borderRadius: '50%', border: 'none', cursor: 'pointer', backgroundColor: 'white' }}>
                                 <X size={24} color="#64748b" />
                             </button>
                         </div>
 
-                        <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', gap: '24px', flexDirection: 'row' }}>
-                            {/* Task List - Slightly narrower */}
-                            <div style={{ width: '250px', display: 'flex', flexDirection: 'column', gap: '12px', borderRight: '1px solid #f1f5f9', paddingRight: '24px' }}>
-                                <h3 style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '0.95rem', color: '#64748b' }}>Select Task</h3>
-                                {studentTasks.length === 0 ? (
-                                    <div className="text-gray-400 italic font-sm">No tasks assigned</div>
-                                ) : (
-                                    studentTasks.map(task => (
-                                        <div
-                                            key={task.id}
-                                            onClick={() => handleTaskSelect(task)}
-                                            style={{
-                                                padding: '12px 16px', borderRadius: '10px',
-                                                border: '1px solid',
-                                                borderColor: selectedTask?.id === task.id ? '#3b82f6' : '#e2e8f0',
-                                                backgroundColor: selectedTask?.id === task.id ? '#eff6ff' : '#fff',
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px' }}>{task.title}</div>
-                                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                                Score: <span style={{ fontWeight: 'bold', color: task.student_task_reviews?.[0]?.score ? '#1e293b' : '#94a3b8' }}>{task.student_task_reviews?.[0]?.score ?? '--'}</span>/10
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+                            {loadingAssessment ? (
+                                <div className="flex justify-center py-12">
+                                    <Loader2 className="animate-spin text-purple-500" size={32} />
+                                </div>
+                            ) : (
+                                <form onSubmit={handleSaveAssessment}>
+                                    {/* Soft Skills Section */}
+                                    <div className="mb-8">
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                                            <label style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>Soft Skills (0-10)</label>
+                                            <div style={{
+                                                padding: '6px 16px',
+                                                borderRadius: '10px',
+                                                backgroundColor: '#8b5cf6',
+                                                color: 'white',
+                                                fontWeight: 'bold',
+                                                fontSize: '0.95rem'
+                                            }}>
+                                                Avg: {softSkillsAvg}
                                             </div>
                                         </div>
-                                    ))
-                                )}
-                            </div>
-
-                            {/* Grading Form */}
-                            <div style={{ flex: 1 }}>
-                                {selectedTask ? (
-                                    <form onSubmit={handleSaveTaskReview}>
-                                        <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '20px' }}>
-                                            Reviewing: {selectedTask.title}
-                                            {isReadOnly && <span style={{ fontSize: '0.8rem', color: '#ef4444', marginLeft: '10px' }}>(Locked by Tutor)</span>}
-                                        </h3>
-
-                                        <div className="mb-6">
-                                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px', fontSize: '0.9rem' }}>Task Score (0-10)</label>
-                                            <div className="flex items-center gap-4">
-                                                <input
-                                                    type="range" min="0" max="10" step="0.5" style={{ flex: 1 }}
-                                                    value={taskScore} onChange={(e) => setTaskScore(parseFloat(e.target.value))}
-                                                    disabled={isReadOnly}
-                                                />
-                                                <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#3b82f6', width: '50px', textAlign: 'right' }}>{taskScore}</span>
-                                            </div>
-                                        </div>
-
-                                        <div className="mb-6">
-                                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px', fontSize: '0.9rem' }}>Review / Feedback</label>
-                                            <textarea
-                                                style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', minHeight: '80px', fontSize: '0.9rem' }}
-                                                placeholder="Performance review..."
-                                                value={taskReview}
-                                                onChange={(e) => setTaskReview(e.target.value)}
-                                                disabled={isReadOnly}
-                                            />
-                                        </div>
-
-                                        <div className="mb-6">
-                                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px', fontSize: '0.9rem' }}>Improvements</label>
-                                            <textarea
-                                                style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', minHeight: '80px', fontSize: '0.9rem' }}
-                                                placeholder="Suggested improvements..."
-                                                value={taskImprovements}
-                                                onChange={(e) => setTaskImprovements(e.target.value)}
-                                                disabled={isReadOnly}
-                                            />
-                                        </div>
-
-                                        <div className="mb-6">
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                                                <label style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Soft Skills (0-10)</label>
-                                                <div style={{
-                                                    padding: '4px 12px',
-                                                    borderRadius: '8px',
-                                                    backgroundColor: '#8b5cf6',
-                                                    color: 'white',
-                                                    fontWeight: 'bold',
-                                                    fontSize: '0.9rem'
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'x 24px', rowGap: '12px' }}>
+                                            {SOFT_SKILL_TRAITS.map(trait => (
+                                                <div key={trait} style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '8px',
+                                                    opacity: softSkillEnabled[trait] ? 1 : 0.6,
+                                                    transition: 'opacity 0.2s'
                                                 }}>
-                                                    Avg: {taskSoftSkillsScore}
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={softSkillEnabled[trait]}
+                                                        onChange={() => toggleSoftSkill(trait)}
+                                                        style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#8b5cf6' }}
+                                                    />
+                                                    <label
+                                                        style={{ fontSize: '0.85rem', color: '#475569', flex: 1, cursor: 'pointer' }}
+                                                        onClick={() => toggleSoftSkill(trait)}
+                                                        title={trait}
+                                                    >
+                                                        {trait}
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        min="0" max="10" step="0.5"
+                                                        disabled={!softSkillEnabled[trait]}
+                                                        value={softSkillScores[trait] || 0}
+                                                        onChange={(e) => {
+                                                            let val = parseFloat(e.target.value) || 0;
+                                                            val = Math.min(10, Math.max(0, val));
+                                                            handleSoftSkillChange(trait, val);
+                                                        }}
+                                                        style={{
+                                                            width: '60px', padding: '6px', borderRadius: '8px',
+                                                            border: '1px solid #e2e8f0', textAlign: 'center',
+                                                            fontSize: '0.9rem',
+                                                            backgroundColor: softSkillEnabled[trait] ? 'white' : '#f1f5f9'
+                                                        }}
+                                                    />
                                                 </div>
-                                            </div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                                {SOFT_SKILL_TRAITS.map(trait => (
-                                                    <div key={trait} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                                        <label style={{ fontSize: '0.8rem', color: '#475569', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={trait}>{trait}</label>
-                                                        <input
-                                                            type="number"
-                                                            min="0" max="10" step="0.5"
-                                                            disabled={isReadOnly}
-                                                            value={taskTraitScores[trait] || 0}
-                                                            onChange={(e) => {
-                                                                let val = parseFloat(e.target.value);
-                                                                if (isNaN(val)) val = 0;
-                                                                if (val > 10) val = 10;
-                                                                if (val < 0) val = 0;
+                                            ))}
+                                        </div>
+                                    </div>
 
-                                                                const newTraits = { ...taskTraitScores, [trait]: val };
-                                                                setTaskTraitScores(newTraits);
-
-                                                                let total = 0;
-                                                                SOFT_SKILL_TRAITS.forEach(t => {
-                                                                    total += (newTraits[t] || 0);
-                                                                });
-
-                                                                const avg = parseFloat((total / SOFT_SKILL_TRAITS.length).toFixed(1));
-                                                                setTaskSoftSkillsScore(avg);
-                                                            }}
-                                                            style={{
-                                                                width: '60px', padding: '6px', borderRadius: '6px',
-                                                                border: '1px solid #cbd5e1', textAlign: 'center', fontSize: '0.85rem'
-                                                            }}
-                                                        />
-                                                    </div>
-                                                ))}
+                                    {/* Development Skills Section */}
+                                    <div className="mb-8">
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                                            <label style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>Development Skills (0-10)</label>
+                                            <div style={{
+                                                padding: '6px 16px',
+                                                borderRadius: '10px',
+                                                backgroundColor: '#10b981',
+                                                color: 'white',
+                                                fontWeight: 'bold',
+                                                fontSize: '0.95rem'
+                                            }}>
+                                                Avg: {devSkillsAvg}
                                             </div>
                                         </div>
-
-                                        {!isReadOnly && (
-                                            <button type="submit" disabled={saving} style={{ padding: '10px 24px', backgroundColor: '#000', color: '#fff', borderRadius: '10px', fontWeight: 'bold', border: 'none', cursor: 'pointer', width: '100%' }}>
-                                                {saving ? 'Saving...' : 'Save Review'}
-                                            </button>
-                                        )}
-                                    </form>
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                                        <ClipboardList size={48} className="mb-4 opacity-20" />
-                                        <p>Select a task from the left list to review</p>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'x 24px', rowGap: '12px' }}>
+                                            {DEVELOPMENT_SKILL_TRAITS.map(trait => (
+                                                <div key={trait} style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '8px',
+                                                    opacity: devSkillEnabled[trait] ? 1 : 0.6,
+                                                    transition: 'opacity 0.2s'
+                                                }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={devSkillEnabled[trait]}
+                                                        onChange={() => toggleDevSkill(trait)}
+                                                        style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#10b981' }}
+                                                    />
+                                                    <label
+                                                        style={{ fontSize: '0.85rem', color: '#475569', flex: 1, cursor: 'pointer' }}
+                                                        onClick={() => toggleDevSkill(trait)}
+                                                        title={trait}
+                                                    >
+                                                        {trait}
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        min="0" max="10" step="0.5"
+                                                        disabled={!devSkillEnabled[trait]}
+                                                        value={devSkillScores[trait] || 0}
+                                                        onChange={(e) => {
+                                                            let val = parseFloat(e.target.value) || 0;
+                                                            val = Math.min(10, Math.max(0, val));
+                                                            handleDevSkillChange(trait, val);
+                                                        }}
+                                                        style={{
+                                                            width: '60px', padding: '6px', borderRadius: '8px',
+                                                            border: '1px solid #e2e8f0', textAlign: 'center',
+                                                            fontSize: '0.9rem',
+                                                            backgroundColor: devSkillEnabled[trait] ? 'white' : '#f1f5f9'
+                                                        }}
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                )}
-                            </div>
+
+                                    <button
+                                        type="submit"
+                                        disabled={saving}
+                                        style={{
+                                            padding: '14px 24px',
+                                            backgroundColor: '#8b5cf6',
+                                            color: '#fff',
+                                            borderRadius: '12px',
+                                            fontWeight: 'bold',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            width: '100%',
+                                            fontSize: '1rem'
+                                        }}
+                                    >
+                                        {saving ? 'Saving...' : 'Save Skills Assessment'}
+                                    </button>
+                                </form>
+                            )}
                         </div>
                     </div>
                 </div>

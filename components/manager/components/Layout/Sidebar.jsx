@@ -24,7 +24,8 @@ import {
     FileText,
     Check,
     Ticket,
-    ClipboardList
+    ClipboardList,
+    Award
 } from 'lucide-react';
 import { useProject } from '../../../employee/context/ProjectContext';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -76,6 +77,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
         { icon: FileCheck, label: 'Policies', path: '/manager-dashboard/policies' },
         { icon: Ticket, label: 'Raise a Ticket', path: '/manager-dashboard/raise-ticket' },
         { icon: ClipboardList, label: 'Student Review', path: '/manager-dashboard/student-review' },
+        { icon: Award, label: 'Rankings', path: '/manager-dashboard/rankings' },
     ];
 
     // Role-based project menu configurations
@@ -86,6 +88,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
             { icon: User, label: 'My Tasks', path: '/manager-dashboard/personal-tasks' },
             { icon: BarChart2, label: 'Team Performance', path: '/manager-dashboard/analytics' },
             { icon: Network, label: 'Hierarchy', path: '/manager-dashboard/project-hierarchy' },
+            { icon: ClipboardList, label: 'Task Review', path: '/manager-dashboard/task-review' },
         ],
         employee: [
             { icon: Users, label: 'Students', path: '/manager-dashboard/students' },
@@ -93,6 +96,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
             { icon: User, label: 'My Tasks', path: '/manager-dashboard/personal-tasks' },
             { icon: BarChart2, label: 'Team Performance', path: '/manager-dashboard/analytics' },
             { icon: Network, label: 'Hierarchy', path: '/manager-dashboard/project-hierarchy' },
+            { icon: ClipboardList, label: 'Task Review', path: '/manager-dashboard/task-review' },
         ],
         team_lead: [
             { icon: Users, label: 'Students', path: '/manager-dashboard/students' },
@@ -101,6 +105,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
             { icon: BarChart2, label: 'Team Performance', path: '/manager-dashboard/analytics' },
             { icon: Network, label: 'Hierarchy', path: '/manager-dashboard/project-hierarchy' },
             { icon: FileText, label: 'Project Documents', path: '/manager-dashboard/documents' },
+            { icon: ClipboardList, label: 'Task Review', path: '/manager-dashboard/task-review' },
         ],
         manager: [
             { icon: Users, label: 'Students', path: '/manager-dashboard/students' },
@@ -109,6 +114,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
             { icon: BarChart2, label: 'Team Performance', path: '/manager-dashboard/analytics' },
             { icon: Network, label: 'Project Hierarchy', path: '/manager-dashboard/project-hierarchy' },
             { icon: FileText, label: 'Project Documents', path: '/manager-dashboard/documents' },
+            { icon: ClipboardList, label: 'Task Review', path: '/manager-dashboard/task-review' },
         ]
     };
 
@@ -120,11 +126,11 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
     let finalProjectMenuItems = projectMenuItems;
 
     if (orgName?.trim() === 'Cohort') {
-        const allowedOrg = ['Dashboard', 'Announcements', 'Org Hierarchy', 'Messages', 'Student Review'];
+        const allowedOrg = ['Dashboard', 'Announcements', 'Org Hierarchy', 'Messages', 'Student Review', 'Rankings'];
         finalOrgMenuItems = orgMenuItems.filter(item => allowedOrg.includes(item.label));
 
         // Project Section: Team members, All Project Tasks, Analytics, Project Hierarchy, Documents
-        const allowedProject = ['Students', 'All Project Tasks', 'Team Performance', 'Project Hierarchy', 'Documents', 'Project Documents'];
+        const allowedProject = ['Students', 'All Project Tasks', 'Team Performance', 'Project Hierarchy', 'Documents', 'Project Documents', 'Task Review'];
         finalProjectMenuItems = projectMenuItems.filter(item => allowedProject.includes(item.label));
     }
 

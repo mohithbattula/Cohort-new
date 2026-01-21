@@ -22,7 +22,8 @@ import {
     ClipboardCheck,
     TrendingUp,
     Ticket,
-    Star
+    Star,
+    Award
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useProject } from '../../context/ProjectContext';
@@ -61,6 +62,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
         { icon: MessageCircle, label: 'Messages', path: '/student-dashboard/messages' },
         { icon: Network, label: 'Org Hierarchy', path: '/student-dashboard/org-hierarchy' },
         { icon: Ticket, label: 'Raise a Ticket', path: '/student-dashboard/raise-ticket' },
+        { icon: Award, label: 'Rankings', path: '/student-dashboard/rankings' },
     ];
 
     // Role-based project menu configurations
@@ -113,6 +115,11 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
     if (orgName?.trim() === 'Cohort') {
         const excluded = ['Leaves', 'Payslip', 'Policies', 'My Attendance', 'Raise a Ticket'];
         finalOrgMenuItems = orgMenuItems.filter(item => !excluded.includes(item.label));
+        // Ensure Rankings is included in Cohort view
+        const rankingItem = orgMenuItems.find(i => i.label === 'Rankings');
+        if (rankingItem && !finalOrgMenuItems.find(i => i.label === 'Rankings')) {
+            finalOrgMenuItems.push(rankingItem);
+        }
         // Project items for Employee match the request, so no filtering needed, 
         // but we'll assign it to ensure consistency if we wanted to filter later.
         finalProjectMenuItems = projectMenuItems;

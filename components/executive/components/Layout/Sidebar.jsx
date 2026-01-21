@@ -24,7 +24,8 @@ import {
     Building2,
     FolderKanban,
     Ticket,
-    ClipboardList
+    ClipboardList,
+    Award
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useMessages } from '../../../shared/context/MessageContext';
@@ -65,6 +66,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
         { icon: FileCheck, label: 'Policies', path: '/executive-dashboard/policies' },
         { icon: Ticket, label: 'Raise a Ticket', path: '/executive-dashboard/raise-ticket' },
         { icon: ClipboardList, label: 'Student Review', path: '/executive-dashboard/student-review' },
+        { icon: Award, label: 'Rankings', path: '/executive-dashboard/rankings' },
     ];
 
     const projectMenuItems = [
@@ -74,6 +76,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
         { icon: TrendingUp, label: 'Project Analytics', path: '/executive-dashboard/project-analytics' },
         { icon: Network, label: 'Project Hierarchy', path: '/executive-dashboard/project-hierarchy' },
         { icon: FileText, label: 'Project Documents', path: '/executive-dashboard/documents' },
+        { icon: ClipboardList, label: 'Task Review', path: '/executive-dashboard/task-review' },
     ];
 
     // Filter for Cohort Organization
@@ -81,7 +84,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
     let finalProjectMenuItems = projectMenuItems;
 
     if (orgName?.trim() === 'Cohort') {
-        const allowedOrg = ['Dashboard', 'Announcements', 'Org Hierarchy', 'Messages', 'Students', 'Student Review'];
+        const allowedOrg = ['Dashboard', 'Announcements', 'Org Hierarchy', 'Messages', 'Students', 'Student Review', 'Rankings'];
         finalOrgMenuItems = orgMenuItems.filter(item => allowedOrg.includes(item.label));
 
         // Rename 'Students' to 'All Members' explicitly for this view
@@ -96,7 +99,8 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
             projectMenuItems.find(i => i.label === 'Tasks'), // All Team Tasks
             projectMenuItems.find(i => i.label === 'Analytics'), // All Team Analytics
             projectMenuItems.find(i => i.label === 'Project Hierarchy'),
-            projectMenuItems.find(i => i.label === 'Project Documents')
+            projectMenuItems.find(i => i.label === 'Project Documents'),
+            projectMenuItems.find(i => i.label === 'Task Review')
         ].filter(Boolean);
     }
 
