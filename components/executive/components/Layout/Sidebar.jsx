@@ -108,6 +108,36 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
     // Menu item renderer
     const renderMenuItem = (item, index, keyPrefix) => {
         const isActive = location.pathname === item.path;
+
+        // Icon color mapping for visual distinction
+        const iconColors = {
+            'Dashboard': '#f59e0b',
+            'Students': '#3b82f6',
+            'All Members': '#3b82f6',
+            'Student Status': '#10b981',
+            'Leave Requests': '#f97316',
+            'Payroll': '#22c55e',
+            'Payslips': '#84cc16',
+            'Invoice': '#eab308',
+            'Hiring Portal': '#8b5cf6',
+            'Org Hierarchy': '#06b6d4',
+            'Announcements': '#ec4899',
+            'Messages': '#6366f1',
+            'Policies': '#14b8a6',
+            'Raise a Ticket': '#f43f5e',
+            'Student Review': '#a855f7',
+            'Rankings': '#fbbf24',
+            'Projects': '#0ea5e9',
+            'Tasks': '#f97316',
+            'Analytics': '#10b981',
+            'Project Analytics': '#06b6d4',
+            'Project Hierarchy': '#8b5cf6',
+            'Project Documents': '#6366f1',
+            'Task Review': '#ec4899'
+        };
+
+        const iconColor = isActive ? 'white' : (iconColors[item.label] || 'rgba(255,255,255,0.7)');
+
         return (
             <button
                 key={`${keyPrefix}-${index}`}
@@ -141,7 +171,7 @@ const Sidebar = ({ isCollapsed, toggleSidebar, onMouseEnter, onMouseLeave }) => 
                     }
                 }}
             >
-                <item.icon size={18} style={{ flexShrink: 0 }} />
+                <item.icon size={18} style={{ flexShrink: 0, color: iconColor }} />
                 {!isCollapsed && <span>{item.label}</span>}
                 {item.label === 'Messages' && unreadCount > 0 && (
                     <div style={{

@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { MessageCircle, Users, Building2, Search, Paperclip, Send, X, Plus, User, Trash2, Reply, Smile, ChevronDown, PieChart } from 'lucide-react';
+import { MessageCircle, Users, Building2, Search, Paperclip, Send, X, Plus, User, Trash2, Reply, Smile, ChevronDown, PieChart, Bell, MoreVertical } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import {
     getConversationsByCategory,
@@ -54,9 +54,34 @@ const MessagingHub = () => {
     const [showPollDetails, setShowPollDetails] = useState(false);
     const [selectedPollMessage, setSelectedPollMessage] = useState(null);
     const [pollMemberCount, setPollMemberCount] = useState(0);
+    const [isTyping, setIsTyping] = useState(false);
+    const textareaRef = React.useRef(null);
+    const messagesEndRef = React.useRef(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
+
+    useEffect(() => {
+        if (selectedConversation && textareaRef.current) {
+            textareaRef.current.focus();
+        }
+    }, [selectedConversation]);
+
+    const handleTextareaChange = (e) => {
+        setMessageInput(e.target.value);
+        if (textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+        }
+    };
 
     // Quick reaction emojis (like WhatsApp)
-    const QUICK_REACTIONS = ['ðŸ‘', 'ðŸ‘Ž', 'â¤ï¸', 'ðŸ˜‚', 'ðŸ˜®', 'ðŸ˜¢', 'ðŸ™'];
+    const QUICK_REACTIONS = ['👍', '👎', '❤️', '😂', '😮', '😢', '🙏'];
 
     const handleOpenPollDetails = async (msg) => {
         setSelectedPollMessage(msg);
@@ -285,14 +310,14 @@ const MessagingHub = () => {
                     let messageToAdd = fullMsg || newMessage;
 
                     if (messageToAdd.message_type === 'poll') {
-                         messageToAdd = {
-                             ...messageToAdd,
-                             poll_options: messageToAdd.poll_options?.map(opt => ({
-                                 ...opt,
-                                 votes: opt.poll_votes?.length || 0,
-                                 userVoted: currentUserId ? opt.poll_votes?.some(v => v.user_id === currentUserId) : false
-                             })) || []
-                         };
+                        messageToAdd = {
+                            ...messageToAdd,
+                            poll_options: messageToAdd.poll_options?.map(opt => ({
+                                ...opt,
+                                votes: opt.poll_votes?.length || 0,
+                                userVoted: currentUserId ? opt.poll_votes?.some(v => v.user_id === currentUserId) : false
+                            })) || []
+                        };
                     }
 
                     setMessages(prev => {
@@ -564,23 +589,31 @@ const MessagingHub = () => {
             const userReactions = currentReactions[emoji] || [];
             const hasReacted = userReactions.includes(currentUserId);
 
-            let updatedReactions;
+            let updatedReactions = { ...currentReactions };
+
             if (hasReacted) {
-                // Remove user's reaction
-                updatedReactions = {
-                    ...currentReactions,
-                    [emoji]: userReactions.filter(id => id !== currentUserId)
-                };
+                // Remove user's reaction (toggle off)
+                updatedReactions[emoji] = userReactions.filter(id => id !== currentUserId);
                 // Clean up empty arrays
                 if (updatedReactions[emoji].length === 0) {
                     delete updatedReactions[emoji];
                 }
             } else {
-                // Add user's reaction
-                updatedReactions = {
-                    ...currentReactions,
-                    [emoji]: [...userReactions, currentUserId]
-                };
+                // FIRST: Remove user from ALL other emoji reactions (enforce one reaction per user)
+                Object.keys(updatedReactions).forEach(existingEmoji => {
+                    if (existingEmoji !== emoji) {
+                        updatedReactions[existingEmoji] = updatedReactions[existingEmoji].filter(
+                            id => id !== currentUserId
+                        );
+                        // Clean up empty arrays
+                        if (updatedReactions[existingEmoji].length === 0) {
+                            delete updatedReactions[existingEmoji];
+                        }
+                    }
+                });
+
+                // THEN: Add user's new reaction
+                updatedReactions[emoji] = [...(updatedReactions[emoji] || []), currentUserId];
             }
 
             // Update in database
@@ -887,9 +920,6 @@ const MessagingHub = () => {
             ) : (
                 // Category Selector
                 <div className="category-sidebar">
-                    <div className="category-header">
-                        <h2>Messages</h2>
-                    </div>
                     <div className="category-list">
                         {categories.map(category => {
                             const Icon = category.icon;
@@ -900,11 +930,7 @@ const MessagingHub = () => {
                                     className={`category-item ${activeCategory === category.id ? 'active' : ''}`}
                                     onClick={() => setActiveCategory(category.id)}
                                 >
-                                    <Icon size={20} />
-                                    <div className="category-info">
-                                        <span className="category-label">{category.label}</span>
-                                        <span className="category-description">{category.description}</span>
-                                    </div>
+                                    <Icon size={22} />
                                 </button>
                             );
                         })}
@@ -1021,24 +1047,30 @@ const MessagingHub = () => {
                                     onClick={() => loadMessages(conv)}
                                 >
                                     <div className="conversation-avatar">
-                                        {conv.type === 'dm' ? <User size={20} /> : conv.type === 'team' ? <Users size={20} /> : <Building2 size={20} />}
+                                        {conv.type === 'dm' ? (
+                                            conv.avatar_url ? <img src={conv.avatar_url} alt="" /> : <User size={20} />
+                                        ) : conv.type === 'team' ? (
+                                            <Users size={24} />
+                                        ) : (
+                                            <Building2 size={24} />
+                                        )}
                                     </div>
                                     <div className="conversation-info">
                                         <div className="conversation-name">
-                                            {conv.name || 'Conversation'}
+                                            <span>{conv.name || 'Conversation'}</span>
+                                            <span className="conversation-time">
+                                                {conv.conversation_indexes?.[0]?.last_message_at ? (
+                                                    new Date(conv.conversation_indexes[0].last_message_at).toLocaleTimeString([], {
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    })
+                                                ) : ''}
+                                            </span>
                                         </div>
                                         <div className="conversation-preview">
                                             {conv.conversation_indexes?.[0]?.last_message
-                                                || (conv.conversation_indexes?.[0]?.last_message_at ? 'ðŸ“Ž Attachment' : 'No messages yet')}
+                                                || (conv.conversation_indexes?.[0]?.last_message_at ? '📎 Attachment' : 'No messages yet')}
                                         </div>
-                                    </div>
-                                    <div className="conversation-time">
-                                        {conv.conversation_indexes?.[0]?.last_message_at ? (
-                                            new Date(conv.conversation_indexes[0].last_message_at).toLocaleTimeString([], {
-                                                hour: '2-digit',
-                                                minute: '2-digit'
-                                            })
-                                        ) : ''}
                                     </div>
                                 </div>
                             );
@@ -1052,34 +1084,45 @@ const MessagingHub = () => {
                 {selectedConversation ? (
                     <>
                         <div className="thread-header">
-                            <div className="thread-info">
-                                <h3>{selectedConversation.name || selectedConversation.otherUser?.full_name || 'Conversation'}</h3>
-                                <span className="thread-type">
-                                    {selectedConversation.type === 'dm' ? 'Direct Message' :
-                                        selectedConversation.type === 'team' ? 'Team Chat' : 'Organization'}
-                                </span>
+                            <div className="header-user-info">
+                                <div className="conversation-avatar" style={{ borderRadius: '12px', width: '42px', height: '42px' }}>
+                                    {selectedConversation.type === 'dm' ? (
+                                        selectedConversation.otherUser?.avatar_url ? (
+                                            <img src={selectedConversation.otherUser.avatar_url} alt="" />
+                                        ) : (
+                                            <User size={20} />
+                                        )
+                                    ) : selectedConversation.type === 'team' ? (
+                                        <Users size={20} />
+                                    ) : (
+                                        <Building2 size={20} />
+                                    )}
+                                </div>
+                                <div className="thread-info">
+                                    <h3>{selectedConversation.name || selectedConversation.otherUser?.full_name || 'Conversation'}</h3>
+                                    {selectedConversation.type === 'dm' && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            {/* We can hide this or show 'Offline' if we don't have real-time presence data */}
+                                            {/* For now, only show if we want to simulate or have data */}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            {(selectedConversation.type === 'team' || selectedConversation.type === 'everyone') && (
-                                <button
-                                    onClick={fetchConversationMembers}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '6px',
-                                        padding: '6px 12px',
-                                        borderRadius: '6px',
-                                        border: '1px solid #e5e7eb',
-                                        background: 'white',
-                                        cursor: 'pointer',
-                                        fontSize: '12px',
-                                        color: '#374151',
-                                        fontWeight: 500
-                                    }}
-                                >
-                                    <Users size={14} />
-                                    View Members
-                                </button>
-                            )}
+
+                            <div className="header-actions">
+                                <button className="action-icon" title="Search Message history"><Search size={18} /></button>
+                                <button className="action-icon" title="Toggle Notifications"><Bell size={18} /></button>
+                                {(selectedConversation.type === 'team' || selectedConversation.type === 'everyone') && (
+                                    <button
+                                        className="action-icon"
+                                        onClick={fetchConversationMembers}
+                                        title="View Chat Members"
+                                    >
+                                        <Users size={18} />
+                                    </button>
+                                )}
+                                <button className="action-icon" title="More Chat Settings"><MoreVertical size={18} /></button>
+                            </div>
                         </div>
 
                         <div className="messages-container">
@@ -1101,194 +1144,140 @@ const MessagingHub = () => {
                             ) : (
                                 messages.map((msg, index) => {
                                     const prevMsg = messages[index - 1];
+                                    const nextMsg = messages[index + 1];
+
                                     const prevDate = prevMsg ? new Date(prevMsg.created_at).toDateString() : null;
                                     const currDate = new Date(msg.created_at).toDateString();
                                     const isNewDay = currDate !== prevDate;
 
+                                    const isStartOfGroup = isNewDay || prevMsg?.sender_user_id !== msg.sender_user_id;
+                                    const isEndOfGroup = nextMsg?.sender_user_id !== msg.sender_user_id;
+                                    const isMiddleOfGroup = !isStartOfGroup && !isEndOfGroup;
+
+                                    let groupClass = '';
+                                    if (isStartOfGroup) groupClass = 'new-group group-start';
+                                    else if (isEndOfGroup) groupClass = 'group-end';
+                                    else if (isMiddleOfGroup) groupClass = 'group-middle';
+
                                     return (
                                         <React.Fragment key={msg.id}>
                                             {isNewDay && (
-                                                <div className="date-divider" style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    margin: '24px 0 12px 0',
-                                                    position: 'relative'
-                                                }}>
-                                                    <div style={{ height: '1px', background: '#e5e7eb', width: '100%', position: 'absolute' }}></div>
-                                                    <span style={{
-                                                        background: '#f9fafb',
-                                                        padding: '0 16px',
-                                                        fontSize: '11px',
-                                                        color: '#6b7280',
-                                                        fontWeight: 600,
-                                                        zIndex: 1,
-                                                        textTransform: 'uppercase',
-                                                        letterSpacing: '0.05em'
-                                                    }}>
-                                                        {formatDividerDate(msg.created_at)}
-                                                    </span>
+                                                <div className="date-divider">
+                                                    <span>{formatDividerDate(msg.created_at)}</span>
                                                 </div>
                                             )}
                                             <div
-                                                className={`message ${msg.sender_user_id === currentUserId ? 'sent' : 'received'}`}
-                                                style={{ position: 'relative', group: 'message-group' }}
+                                                className={`message ${msg.sender_user_id === currentUserId ? 'sent' : 'received'} ${groupClass}`}
+                                                style={{ animationDelay: `${index % 20 * 0.02}s`, position: 'relative' }}
                                                 onMouseEnter={() => setHoveredMessageId(msg.id)}
-                                                onMouseLeave={() => setHoveredMessageId(null)}
+                                                onMouseLeave={() => {
+                                                    setHoveredMessageId(null);
+                                                    if (activeDropdownId === msg.id) setActiveDropdownId(null);
+                                                }}
                                             >
-                                                <div className="message-bubble">
-                                                    {/* Sender Name for Group Chats */}
-                                                    {(selectedConversation.type === 'team' || selectedConversation.type === 'everyone') && msg.sender_user_id !== currentUserId && (
-                                                        <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px', marginLeft: '2px', fontWeight: 600 }}>
-                                                            {getSenderName(msg.sender_user_id)}
+                                                {/* Action Toggle Button */}
+                                                {hoveredMessageId === msg.id && !msg.is_deleted && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setActiveDropdownId(activeDropdownId === msg.id ? null : msg.id);
+                                                        }}
+                                                        style={{
+                                                            position: 'absolute',
+                                                            top: '-12px',
+                                                            right: msg.sender_user_id === currentUserId ? '4px' : 'auto',
+                                                            left: msg.sender_user_id === currentUserId ? 'auto' : '4px',
+                                                            background: 'white',
+                                                            border: '1px solid var(--chat-border)',
+                                                            borderRadius: '50%',
+                                                            width: '24px',
+                                                            height: '24px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            cursor: 'pointer',
+                                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                            zIndex: 100
+                                                        }}
+                                                    >
+                                                        <ChevronDown size={14} color="#64748b" />
+                                                    </button>
+                                                )}
+
+                                                {/* Action Dropdown */}
+                                                {activeDropdownId === msg.id && (
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        top: '12px',
+                                                        right: msg.sender_user_id === currentUserId ? '0' : 'auto',
+                                                        left: msg.sender_user_id === currentUserId ? 'auto' : '0',
+                                                        background: 'white',
+                                                        borderRadius: '12px',
+                                                        boxShadow: 'var(--chat-shadow-lg)',
+                                                        border: '1px solid var(--chat-border)',
+                                                        minWidth: '220px',
+                                                        zIndex: 200,
+                                                        overflow: 'hidden',
+                                                        animation: 'messageSlideIn 0.2s ease'
+                                                    }}>
+                                                        {/* Quick Reactions */}
+                                                        <div style={{ padding: '8px 12px', display: 'flex', gap: '8px', borderBottom: '1px solid var(--chat-hover)', background: '#f8fafc' }}>
+                                                            {['👍', '👎', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
+                                                                <button
+                                                                    key={emoji}
+                                                                    onClick={() => { handleReaction(msg.id, emoji); setActiveDropdownId(null); }}
+                                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', padding: '2px', transition: 'transform 0.2s' }}
+                                                                    onMouseEnter={(e) => e.target.style.transform = 'scale(1.2)'}
+                                                                    onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+                                                                >
+                                                                    {emoji}
+                                                                </button>
+                                                            ))}
                                                         </div>
-                                                    )}
-                                                    {/* Message Actions Dropdown */}
-                                                    {!msg.is_deleted && hoveredMessageId === msg.id && (
-                                                        <div
-                                                            style={{
-                                                                position: 'absolute',
-                                                                top: '-15px',
-                                                                right: msg.sender_user_id === currentUserId ? '0' : 'auto',
-                                                                left: msg.sender_user_id !== currentUserId ? '0' : 'auto',
-                                                                zIndex: 10,
-                                                                animation: 'fadeIn 0.2s ease'
-                                                            }}
-                                                        >
+
+                                                        {/* Menu Options */}
+                                                        <div style={{ padding: '4px' }}>
                                                             <button
-                                                                onClick={() => setActiveDropdownId(activeDropdownId === msg.id ? null : msg.id)}
-                                                                style={{
-                                                                    background: 'white',
-                                                                    border: '1px solid #e2e8f0',
-                                                                    borderRadius: '50%',
-                                                                    width: '28px',
-                                                                    height: '28px',
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    justifyContent: 'center',
-                                                                    cursor: 'pointer',
-                                                                    boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-                                                                    color: '#64748b'
-                                                                }}
+                                                                onClick={() => { setReplyToMessage(msg); setActiveDropdownId(null); }}
+                                                                style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', color: '#1e293b', borderRadius: '8px' }}
+                                                                onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                                                                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
                                                             >
-                                                                <ChevronDown size={16} />
+                                                                <Reply size={16} color="#64748b" /> Reply
                                                             </button>
 
-                                                            {/* Dropdown Menu */}
-                                                            {activeDropdownId === msg.id && (
-                                                                <div style={{
-                                                                    position: 'absolute',
-                                                                    // Open upwards ONLY if it's near the bottom AND NOT near the top (to avoid header clipping)
-                                                                    top: (messages.length - index <= 3 && index >= 3) ? 'auto' : '100%',
-                                                                    bottom: (messages.length - index <= 3 && index >= 3) ? '100%' : 'auto',
-                                                                    right: msg.sender_user_id === currentUserId ? '0' : 'auto',
-                                                                    left: msg.sender_user_id !== currentUserId ? '0' : 'auto',
-                                                                    marginTop: (messages.length - index <= 3 && index >= 3) ? '0' : '4px',
-                                                                    marginBottom: (messages.length - index <= 3 && index >= 3) ? '4px' : '0',
-                                                                    background: 'white',
-                                                                    borderRadius: '8px',
-                                                                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                                                                    border: '1px solid #e2e8f0',
-                                                                    minWidth: '200px',
-                                                                    zIndex: 20,
-                                                                    padding: '4px 0',
-                                                                    overflow: 'hidden'
-                                                                }}
-                                                                    onMouseLeave={() => setActiveDropdownId(null)}
+                                                            <div style={{ height: '1px', background: '#f1f5f9', margin: '4px 0' }} />
+
+                                                            <button
+                                                                onClick={() => { deleteMessageForMe(msg.id); setActiveDropdownId(null); }}
+                                                                style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', color: '#64748b', borderRadius: '8px' }}
+                                                                onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                                                                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                                                            >
+                                                                <Trash2 size={16} color="#64748b" /> Delete for me
+                                                            </button>
+
+                                                            {msg.sender_user_id === currentUserId && (
+                                                                <button
+                                                                    onClick={() => { deleteMessageForEveryone(msg.id); setActiveDropdownId(null); }}
+                                                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', color: '#ef4444', borderRadius: '8px' }}
+                                                                    onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
+                                                                    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
                                                                 >
-                                                                    {/* Quick Reactions Row */}
-                                                                    <div style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', display: 'flex', gap: '6px', justifyContent: 'space-between' }}>
-                                                                        {QUICK_REACTIONS.map(emoji => (
-                                                                            <button
-                                                                                key={emoji}
-                                                                                onClick={() => { handleReaction(msg.id, emoji); setActiveDropdownId(null); }}
-                                                                                style={{
-                                                                                    background: 'none',
-                                                                                    border: 'none',
-                                                                                    fontSize: '18px',
-                                                                                    cursor: 'pointer',
-                                                                                    padding: '2px',
-                                                                                    transition: 'transform 0.15s'
-                                                                                }}
-                                                                                onMouseEnter={(e) => e.target.style.transform = 'scale(1.2)'}
-                                                                                onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
-                                                                            >
-                                                                                {emoji}
-                                                                            </button>
-                                                                        ))}
-                                                                    </div>
-
-                                                                    {/* Menu Items */}
-                                                                    <button
-                                                                        onClick={() => { setReplyToMessage(msg); setActiveDropdownId(null); }}
-                                                                        style={{
-                                                                            display: 'flex',
-                                                                            alignItems: 'center',
-                                                                            gap: '8px',
-                                                                            width: '100%',
-                                                                            padding: '8px 12px',
-                                                                            background: 'white',
-                                                                            border: 'none',
-                                                                            cursor: 'pointer',
-                                                                            textAlign: 'left',
-                                                                            fontSize: '13px',
-                                                                            color: '#334155'
-                                                                        }}
-                                                                        onMouseEnter={(e) => e.target.style.background = '#f1f5f9'}
-                                                                        onMouseLeave={(e) => e.target.style.background = 'white'}
-                                                                    >
-                                                                        <Reply size={14} /> Reply
-                                                                    </button>
-
-                                                                    {msg.sender_user_id === currentUserId && (new Date() - new Date(msg.created_at)) < 5 * 60 * 1000 && (
-                                                                        <>
-                                                                            <div style={{ height: '1px', background: '#e2e8f0', margin: '2px 0' }}></div>
-                                                                            <button
-                                                                                onClick={() => { deleteMessageForMe(msg.id); setActiveDropdownId(null); }}
-                                                                                style={{
-                                                                                    display: 'flex',
-                                                                                    alignItems: 'center',
-                                                                                    gap: '8px',
-                                                                                    width: '100%',
-                                                                                    padding: '8px 12px',
-                                                                                    background: 'white',
-                                                                                    border: 'none',
-                                                                                    cursor: 'pointer',
-                                                                                    textAlign: 'left',
-                                                                                    fontSize: '13px',
-                                                                                    color: '#64748b'
-                                                                                }}
-                                                                                onMouseEnter={(e) => e.target.style.background = '#f1f5f9'}
-                                                                                onMouseLeave={(e) => e.target.style.background = 'white'}
-                                                                            >
-                                                                                <Trash2 size={14} /> Delete for me
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => { deleteMessageForEveryone(msg.id); setActiveDropdownId(null); }}
-                                                                                style={{
-                                                                                    display: 'flex',
-                                                                                    alignItems: 'center',
-                                                                                    gap: '8px',
-                                                                                    width: '100%',
-                                                                                    padding: '8px 12px',
-                                                                                    background: 'white',
-                                                                                    border: 'none',
-                                                                                    cursor: 'pointer',
-                                                                                    textAlign: 'left',
-                                                                                    fontSize: '13px',
-                                                                                    color: '#ef4444'
-                                                                                }}
-                                                                                onMouseEnter={(e) => e.target.style.background = '#fef2f2'}
-                                                                                onMouseLeave={(e) => e.target.style.background = 'white'}
-                                                                            >
-                                                                                <Trash2 size={14} /> Delete for everyone
-                                                                            </button>
-                                                                        </>
-                                                                    )}
-                                                                </div>
+                                                                    <Trash2 size={16} color="#ef4444" /> Delete for everyone
+                                                                </button>
                                                             )}
                                                         </div>
-                                                    )}
+                                                    </div>
+                                                )}
+                                                <div className="message-bubble">
+                                                    {/* Sender Name for Group Chats (Only on start of group) */}
+                                                    {(selectedConversation.type === 'team' || selectedConversation.type === 'everyone') &&
+                                                        msg.sender_user_id !== currentUserId && isStartOfGroup && (
+                                                            <div style={{ fontSize: '11px', color: 'var(--chat-primary)', marginBottom: '4px', fontWeight: 700 }}>
+                                                                {getSenderName(msg.sender_user_id)}
+                                                            </div>
+                                                        )}
 
                                                     {/* Quoted Reply Display */}
                                                     {msg.reply_to && (
@@ -1296,22 +1285,20 @@ const MessagingHub = () => {
                                                             background: msg.sender_user_id === currentUserId ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.05)',
                                                             borderLeft: '3px solid ' + (msg.sender_user_id === currentUserId ? 'rgba(255,255,255,0.5)' : '#6366f1'),
                                                             padding: '6px 10px',
-                                                            borderRadius: '4px',
-                                                            marginBottom: '6px',
+                                                            borderRadius: '8px',
+                                                            marginBottom: '8px',
                                                             fontSize: '12px'
                                                         }}>
-                                                            <div style={{ fontWeight: 600, fontSize: '11px', color: msg.sender_user_id === currentUserId ? 'rgba(255,255,255,0.8)' : '#6366f1', marginBottom: '2px' }}>
+                                                            <div style={{ fontWeight: 700, fontSize: '11px', color: msg.sender_user_id === currentUserId ? 'white' : '#6366f1', marginBottom: '2px' }}>
                                                                 {msg.reply_to.sender_user_id === currentUserId ? 'You' : getSenderName(msg.reply_to.sender_user_id)}
                                                             </div>
-                                                            <div style={{ color: msg.sender_user_id === currentUserId ? 'rgba(255,255,255,0.7)' : '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>
-                                                                {msg.reply_to.content || 'ðŸ“Ž Attachment'}
+                                                            <div style={{ color: msg.sender_user_id === currentUserId ? 'rgba(255,255,255,0.9)' : '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                {msg.reply_to.content || '📎 Attachment'}
                                                             </div>
                                                         </div>
                                                     )}
 
-                                                    <div className="message-content" style={{ fontStyle: msg.is_deleted ? 'italic' : 'normal', color: msg.is_deleted ? '#94a3b8' : 'inherit' }}>
-                                                        {msg.is_deleted && <Trash2 size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />}
-
+                                                    <div className="message-content">
                                                         {msg.message_type === 'poll' && !msg.is_deleted ? (
                                                             <PollMessage
                                                                 message={msg}
@@ -1322,37 +1309,24 @@ const MessagingHub = () => {
                                                             msg.content
                                                         )}
                                                     </div>
+
                                                     {msg.attachments && msg.attachments.length > 0 && (
                                                         <div className="message-attachments">
                                                             {msg.attachments.map(att => (
-                                                                <a
-                                                                    key={att.id}
-                                                                    href={att.url}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="attachment-link"
-                                                                >
-                                                                    ðŸ“Ž {att.file_name}
+                                                                <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" className="attachment-link">
+                                                                    <Paperclip size={14} /> {att.file_name}
                                                                 </a>
                                                             ))}
                                                         </div>
                                                     )}
+
                                                     <div className="message-time">
-                                                        {new Date(msg.created_at).toLocaleTimeString([], {
-                                                            hour: '2-digit',
-                                                            minute: '2-digit'
-                                                        })}
+                                                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                     </div>
 
-                                                    {/* Reactions Display - Floating Badge Style */}
+                                                    {/* Reactions */}
                                                     {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                                        <div style={{
-                                                            display: 'flex',
-                                                            flexWrap: 'wrap',
-                                                            gap: '4px',
-                                                            marginTop: '6px',
-                                                            marginBottom: '-2px'
-                                                        }}>
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
                                                             {Object.entries(msg.reactions).map(([emoji, userIds]) => {
                                                                 if (!userIds || userIds.length === 0) return null;
                                                                 const hasMyReaction = userIds.includes(currentUserId);
@@ -1361,37 +1335,13 @@ const MessagingHub = () => {
                                                                         key={emoji}
                                                                         onClick={() => handleReaction(msg.id, emoji)}
                                                                         style={{
-                                                                            display: 'flex',
-                                                                            alignItems: 'center',
-                                                                            gap: '4px',
-                                                                            padding: '2px 8px',
-                                                                            borderRadius: '12px',
-                                                                            border: hasMyReaction ? '1px solid #818cf8' : '1px solid rgba(0,0,0,0.06)',
-                                                                            background: hasMyReaction
-                                                                                ? '#eef2ff'
-                                                                                : '#ffffff',
-                                                                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                                                                            cursor: 'pointer',
-                                                                            transition: 'all 0.2s ease',
-                                                                            transform: 'scale(1)',
-                                                                            minHeight: '22px'
+                                                                            display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 8px',
+                                                                            borderRadius: '10px', border: hasMyReaction ? '1px solid #818cf8' : '1px solid #e2e8f0',
+                                                                            background: hasMyReaction ? '#f5f7ff' : '#ffffff', cursor: 'pointer', fontSize: '12px'
                                                                         }}
-                                                                        title={userIds.map(id => id === currentUserId ? 'You' : getSenderName(id)).join(', ')}
-                                                                        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                                                                        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                                                                     >
-                                                                        <span style={{ fontSize: '14px', lineHeight: 1 }}>{emoji}</span>
-                                                                        {userIds.length > 1 && (
-                                                                            <span style={{
-                                                                                fontSize: '11px',
-                                                                                fontWeight: 600,
-                                                                                color: hasMyReaction ? '#4f46e5' : '#64748b',
-                                                                                minWidth: '10px',
-                                                                                textAlign: 'center'
-                                                                            }}>
-                                                                                {userIds.length}
-                                                                            </span>
-                                                                        )}
+                                                                        <span>{emoji}</span>
+                                                                        {userIds.length > 1 && <span style={{ fontWeight: 600 }}>{userIds.length}</span>}
                                                                     </button>
                                                                 );
                                                             })}
@@ -1403,110 +1353,62 @@ const MessagingHub = () => {
                                     );
                                 })
                             )}
+                            <div ref={messagesEndRef} />
                         </div>
 
                         <div className="message-input-container">
-                            {/* Error Banner */}
-                            {errorMessage && (
-                                <div style={{
-                                    padding: '0.75rem 1rem',
-                                    marginBottom: '0.5rem',
-                                    background: '#fee2e2',
-                                    border: '1px solid #fca5a5',
-                                    borderRadius: '8px',
-                                    color: '#b91c1c',
-                                    fontSize: '13px',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center'
-                                }}>
-                                    <span>{errorMessage}</span>
-                                    <button
-                                        onClick={() => setErrorMessage(null)}
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
-                                    >
-                                        <X size={16} />
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* Reply Preview Bar */}
-                            {replyToMessage && (
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '12px',
-                                    padding: '10px 14px',
-                                    marginBottom: '8px',
-                                    background: 'linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%)',
-                                    borderRadius: '10px',
-                                    border: '1px solid #c4b5fd',
-                                    borderLeft: '4px solid #6366f1'
-                                }}>
-                                    <Reply size={18} style={{ color: '#6366f1', flexShrink: 0 }} />
-                                    <div style={{ flex: 1, overflow: 'hidden' }}>
-                                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#6366f1', marginBottom: '2px' }}>
-                                            Replying to {replyToMessage.sender_user_id === currentUserId ? 'yourself' : getSenderName(replyToMessage.sender_user_id)}
-                                        </div>
-                                        <div style={{ fontSize: '13px', color: '#374151', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {replyToMessage.content || 'ðŸ“Ž Attachment'}
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={() => setReplyToMessage(null)}
-                                        style={{
-                                            background: 'white',
-                                            border: '1px solid #c4b5fd',
-                                            borderRadius: '50%',
-                                            width: '24px',
-                                            height: '24px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            cursor: 'pointer',
-                                            flexShrink: 0
-                                        }}
-                                    >
-                                        <X size={14} style={{ color: '#6366f1' }} />
-                                    </button>
-                                </div>
-                            )}
-
                             {attachments.length > 0 && (
                                 <div className="attachments-preview">
                                     {attachments.map((file, index) => (
                                         <div key={index} className="attachment-chip">
-                                            <span>{file.name}</span>
-                                            <button onClick={() => removeAttachment(index)}>
+                                            <span style={{ fontSize: '13px', fontWeight: 500 }}>{file.name}</span>
+                                            <button onClick={() => removeAttachment(index)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444', display: 'flex' }}>
                                                 <X size={14} />
                                             </button>
                                         </div>
                                     ))}
                                 </div>
                             )}
-                            <div className="message-input-box">
-                                <label className="attachment-button">
+
+                            {replyToMessage && (
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', marginBottom: '12px',
+                                    background: '#eef2ff', borderRadius: '12px', borderLeft: '4px solid var(--chat-primary)'
+                                }}>
+                                    <Reply size={18} style={{ color: 'var(--chat-primary)' }} />
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--chat-primary)' }}>
+                                            Replying to {replyToMessage.sender_user_id === currentUserId ? 'yourself' : getSenderName(replyToMessage.sender_user_id)}
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: 'var(--chat-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {replyToMessage.content || '📎 Attachment'}
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setReplyToMessage(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            )}
+
+                            <div className="typing-indicator" style={{ height: '20px', fontSize: '11px', color: 'var(--chat-text-muted)', marginBottom: '4px' }}>
+                                {isTyping && "Someone is typing..."}
+                            </div>
+
+                            <div className="input-wrapper">
+                                <label className="action-icon" style={{ cursor: 'pointer', marginBottom: '4px' }}>
                                     <Paperclip size={20} />
-                                    <input
-                                        type="file"
-                                        multiple
-                                        onChange={handleFileAttachment}
-                                        style={{ display: 'none' }}
-                                    />
+                                    <input type="file" multiple onChange={handleFileAttachment} style={{ display: 'none' }} />
                                 </label>
-                                <button
-                                    className="attachment-button"
-                                    onClick={() => setShowPollModal(true)}
-                                    title="Create Poll"
-                                >
+                                <button className="action-icon" onClick={() => setShowPollModal(true)} style={{ marginBottom: '4px' }}>
                                     <PieChart size={20} />
                                 </button>
-                                <input
-                                    type="text"
-                                    placeholder="Type a message... (Paste images directly)"
+                                <textarea
+                                    ref={textareaRef}
+                                    className="auto-grow-textarea"
+                                    placeholder="Type a message or paste images..."
                                     value={messageInput}
-                                    onChange={(e) => setMessageInput(e.target.value)}
-                                    onKeyPress={handleKeyPress}
+                                    onChange={handleTextareaChange}
+                                    onKeyDown={handleKeyPress}
                                     onPaste={handlePaste}
                                 />
                                 <button
@@ -1868,7 +1770,7 @@ const MessagingHub = () => {
                 orgUsers={orgUsers}
                 memberCount={pollMemberCount}
             />
-        </div>
+        </div >
     );
 };
 

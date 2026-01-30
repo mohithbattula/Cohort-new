@@ -108,7 +108,7 @@ const Layout = ({ children }) => {
                     transition: 'margin-left 0.3s ease'
                 }}>
                     <Header />
-                    <main style={{ flex: 1, padding: 'var(--spacing-xl)', backgroundColor: 'var(--background)' }}>
+                    <main style={{ flex: 1, backgroundColor: 'var(--background)' }}>
                         {children}
                     </main>
                     <Chatbot />

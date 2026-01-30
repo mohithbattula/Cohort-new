@@ -1,9 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { Star, TrendingUp, Info, ChevronLeft, ChevronRight, Calendar, Loader2 } from 'lucide-react';
+import { Star, TrendingUp, ChevronLeft, ChevronRight, Calendar, Loader2 } from 'lucide-react';
 import { useUser } from '../context/UserContext';
 import { supabase } from '../../../lib/supabaseClient';
 import { getStudentSkillsAssessments, type SkillsAssessment } from '../../../services/reviews/studentSkillsAssessments';
 import { NeonGradientCard } from "@/registry/magicui/neon-gradient-card";
+import { motion, AnimatePresence } from 'framer-motion';
+
+const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: {
+            staggerChildren: 0.1,
+            delayChildren: 0.2
+        }
+    }
+};
+
+const cardVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: {
+        opacity: 1,
+        y: 0,
+        transition: {
+            duration: 0.5,
+            ease: "easeOut"
+        }
+    }
+};
 
 const MyReviewPage = () => {
     const { userId } = useUser();
@@ -68,14 +92,12 @@ const MyReviewPage = () => {
             if (!userId) return;
             setLoading(true);
             try {
-                // Get start of period string for DB query
                 let periodStartStr = '';
                 if (viewPeriod === 'weekly') {
                     const d = new Date(selectedDate);
                     const day = d.getDay();
                     const diff = d.getDate() - day + (day === 0 ? -6 : 1);
                     const weekStart = new Date(d.setDate(diff));
-                    // Normalize to noon to avoid timezone shifts when calling toISOString
                     weekStart.setHours(12, 0, 0, 0);
                     periodStartStr = weekStart.toISOString().split('T')[0];
                 } else {
@@ -106,21 +128,16 @@ const MyReviewPage = () => {
         fetchTutorReview();
     }, [userId, viewPeriod, selectedDate]);
 
-    // Extract Review/Improvements from override_reason or soft_skill_traits (fallback for schema errors)
     const getFeedbackContent = () => {
         const softTraits = assessment?.soft_skill_traits as any;
-
-        // Check for new Mentor feedback storage first (bypasses missing column error)
         if (softTraits?.__mentor_review) {
             return {
                 review: softTraits.__mentor_review,
                 improvements: softTraits.__mentor_improvements
             };
         }
-
         const feedback = assessment?.override_reason;
         if (!feedback) return { review: null, improvements: null };
-
         if (feedback.startsWith('{')) {
             try {
                 const parsed = JSON.parse(feedback);
@@ -137,54 +154,69 @@ const MyReviewPage = () => {
 
     const { review, improvements } = getFeedbackContent();
 
-    // Modal Components
     const FeedbackModal = ({ title, content, onClose }: { title: string, content: string, onClose: () => void }) => (
-        <div style={{
-            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
-            backdropFilter: 'blur(4px)'
-        }} onClick={onClose}>
-            <div style={{
-                backgroundColor: 'white', padding: '32px', borderRadius: '24px',
-                maxWidth: '600px', width: '90%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)'
-            }} onClick={e => e.stopPropagation()}>
-                <h3 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px', color: '#1e293b' }}>{title}</h3>
-                <div style={{ color: '#475569', lineHeight: '1.7', whiteSpace: 'pre-wrap', marginBottom: '24px' }}>
-                    {content || 'No feedback provided for this period.'}
-                </div>
-                <button
-                    onClick={onClose}
+        <AnimatePresence>
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                style={{
+                    position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
+                    backdropFilter: 'blur(4px)'
+                }} onClick={onClose}
+            >
+                <motion.div
+                    initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ scale: 0.95, opacity: 0, y: 20 }}
                     style={{
-                        width: '100%', padding: '12px', borderRadius: '12px',
-                        backgroundColor: '#7c3aed', color: 'white', fontWeight: 'bold',
-                        border: 'none', cursor: 'pointer'
-                    }}
+                        backgroundColor: 'white', padding: '32px', borderRadius: '24px',
+                        maxWidth: '600px', width: '90%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)'
+                    }} onClick={e => e.stopPropagation()}
                 >
-                    Close
-                </button>
-            </div>
-        </div>
+                    <h3 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px', color: '#1e293b' }}>{title}</h3>
+                    <div style={{ color: '#475569', lineHeight: '1.7', whiteSpace: 'pre-wrap', marginBottom: '24px' }}>
+                        {content || 'No feedback provided for this period.'}
+                    </div>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            width: '100%', padding: '12px', borderRadius: '12px',
+                            backgroundColor: '#7c3aed', color: 'white', fontWeight: 'bold',
+                            border: 'none', cursor: 'pointer'
+                        }}
+                    >
+                        Close
+                    </button>
+                </motion.div>
+            </motion.div>
+        </AnimatePresence>
     );
 
     return (
-        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-            {/* Header and Controls */}
+        <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={containerVariants}
+            style={{ padding: '40px 40px 40px 0' }}
+        >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px', flexWrap: 'wrap', gap: '20px' }}>
-                <div>
+                <motion.div variants={cardVariants}>
                     <h1 style={{ fontSize: '32px', fontWeight: 'bold', color: '#1e293b', marginBottom: '8px' }}>My Review</h1>
                     <p style={{ color: '#64748b' }}>Track your performance as a Mentor</p>
-                </div>
+                </motion.div>
 
-                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                    {/* Weekly/Monthly Toggle */}
-                    <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '12px' }}>
+                <motion.div variants={cardVariants} style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '12px', position: 'relative' }}>
                         <button
                             onClick={() => setViewPeriod('weekly')}
                             style={{
-                                padding: '8px 16px', borderRadius: '8px', border: 'none',
+                                padding: '8px 24px', borderRadius: '8px', border: 'none',
                                 backgroundColor: viewPeriod === 'weekly' ? '#7c3aed' : 'transparent',
                                 color: viewPeriod === 'weekly' ? 'white' : '#64748b',
-                                fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
+                                fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                position: 'relative', zIndex: 1
                             }}
                         >
                             Weekly
@@ -192,17 +224,17 @@ const MyReviewPage = () => {
                         <button
                             onClick={() => setViewPeriod('monthly')}
                             style={{
-                                padding: '8px 16px', borderRadius: '8px', border: 'none',
+                                padding: '8px 24px', borderRadius: '8px', border: 'none',
                                 backgroundColor: viewPeriod === 'monthly' ? '#7c3aed' : 'transparent',
                                 color: viewPeriod === 'monthly' ? 'white' : '#64748b',
-                                fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
+                                fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                position: 'relative', zIndex: 1
                             }}
                         >
                             Monthly
                         </button>
                     </div>
 
-                    {/* Period Navigator */}
                     <div style={{
                         display: 'flex', alignItems: 'center', backgroundColor: 'white',
                         border: '1px solid #e2e8f0', borderRadius: '12px', padding: '4px'
@@ -225,68 +257,88 @@ const MyReviewPage = () => {
                                 backgroundColor: isTodayDisabled() ? '#f1f5f9' : '#7c3aed',
                                 color: isTodayDisabled() ? '#94a3b8' : 'white',
                                 border: 'none', cursor: isTodayDisabled() ? 'default' : 'pointer',
-                                fontWeight: 'bold', fontSize: '13px'
+                                fontWeight: 'bold', fontSize: '13px', transition: 'all 0.2s'
                             }}
                         >
                             Today
                         </button>
                     </div>
-                </div>
+                </motion.div>
             </div>
 
             {loading ? (
                 <div className="flex justify-center p-[100px]">
-                    <Loader2 className="animate-spin" size={48} color="#7c3aed" />
+                    <Loader2 className="animate-spin text-violet-600" size={48} />
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <NeonGradientCard
-                        borderRadius={24}
-                        borderSize={4}
-                        className="transition-all duration-300"
-                        innerClassName="p-10 flex flex-col h-full rounded-[20px]"
-                    >
-                        <div className="w-14 h-14 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center mb-6">
-                            <Star size={32} />
-                        </div>
-                        <h2 className="text-2xl font-bold text-slate-800 mb-3">Review</h2>
-                        <p className="text-slate-500 leading-relaxed flex-1 mb-6">
-                            View detailed feedback on your soft skills, mentorship quality, and team management performance.
-                        </p>
-                        <button
-                            onClick={() => setShowReviewModal(true)}
-                            className="bg-transparent border-none p-0 flex items-center text-blue-500 font-bold text-[15px] cursor-pointer"
+                    <motion.div variants={cardVariants}>
+                        <motion.div
+                            whileHover={{ y: -6, transition: { duration: 0.2, ease: "easeOut" } }}
+                            className="h-full"
                         >
-                            View Reviews →
-                        </button>
-                    </NeonGradientCard>
+                            <NeonGradientCard
+                                borderRadius={24}
+                                borderSize={4}
+                                className="h-full hover:shadow-2xl transition-shadow duration-300"
+                                innerClassName="p-10 flex flex-col h-full rounded-[20px]"
+                            >
+                                <motion.div
+                                    whileHover={{ scale: 1.1 }}
+                                    transition={{ type: "spring", stiffness: 400, damping: 10 }}
+                                    className="w-16 h-16 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center mb-8 shadow-sm"
+                                >
+                                    <Star size={36} />
+                                </motion.div>
+                                <h2 className="text-3xl font-bold text-slate-800 mb-4">Review</h2>
+                                <p className="text-slate-500 text-lg leading-relaxed flex-1 mb-8">
+                                    View detailed feedback on your soft skills, mentorship quality, and team management performance.
+                                </p>
+                                <button
+                                    onClick={() => setShowReviewModal(true)}
+                                    className="w-fit bg-transparent border-none p-0 flex items-center text-violet-600 font-bold text-lg cursor-pointer hover:gap-2 transition-all group focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-violet-500"
+                                >
+                                    View Reviews <span className="ml-1 transition-transform group-hover:translate-x-1">→</span>
+                                </button>
+                            </NeonGradientCard>
+                        </motion.div>
+                    </motion.div>
 
-                    <NeonGradientCard
-                        borderRadius={24}
-                        borderSize={4}
-                        neonColors={{ firstColor: "#10b981", secondColor: "#059669" }}
-                        className="transition-all duration-300"
-                        innerClassName="p-10 flex flex-col h-full rounded-[20px]"
-                    >
-                        <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center mb-6">
-                            <TrendingUp size={32} />
-                        </div>
-                        <h2 className="text-2xl font-bold text-slate-800 mb-3">Improvements</h2>
-                        <p className="text-slate-500 leading-relaxed flex-1 mb-6">
-                            Identify actionable areas for growth, technical skill enhancements, and professional development milestones.
-                        </p>
-                        <button
-                            onClick={() => setShowImprovementModal(true)}
-                            className="bg-transparent border-none p-0 flex items-center text-emerald-500 font-bold text-[15px] cursor-pointer"
+                    <motion.div variants={cardVariants}>
+                        <motion.div
+                            whileHover={{ y: -6, transition: { duration: 0.2, ease: "easeOut" } }}
+                            className="h-full"
                         >
-                            View Improvements →
-                        </button>
-                    </NeonGradientCard>
+                            <NeonGradientCard
+                                borderRadius={24}
+                                borderSize={4}
+                                neonColors={{ firstColor: "#10b981", secondColor: "#059669" }}
+                                className="h-full hover:shadow-2xl transition-shadow duration-300"
+                                innerClassName="p-10 flex flex-col h-full rounded-[20px]"
+                            >
+                                <motion.div
+                                    whileHover={{ scale: 1.1 }}
+                                    transition={{ type: "spring", stiffness: 400, damping: 10 }}
+                                    className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center mb-8 shadow-sm"
+                                >
+                                    <TrendingUp size={36} />
+                                </motion.div>
+                                <h2 className="text-3xl font-bold text-slate-800 mb-4">Improvements</h2>
+                                <p className="text-slate-500 text-lg leading-relaxed flex-1 mb-8">
+                                    Identify actionable areas for growth, technical skill enhancements, and professional development milestones.
+                                </p>
+                                <button
+                                    onClick={() => setShowImprovementModal(true)}
+                                    className="w-fit bg-transparent border-none p-0 flex items-center text-emerald-600 font-bold text-lg cursor-pointer hover:gap-2 transition-all group focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-500"
+                                >
+                                    View Improvements <span className="ml-1 transition-transform group-hover:translate-x-1">→</span>
+                                </button>
+                            </NeonGradientCard>
+                        </motion.div>
+                    </motion.div>
                 </div>
             )}
 
-
-            {/* Modals */}
             {showReviewModal && (
                 <FeedbackModal
                     title="Tutor Feedback"
@@ -301,7 +353,7 @@ const MyReviewPage = () => {
                     onClose={() => setShowImprovementModal(false)}
                 />
             )}
-        </div>
+        </motion.div>
     );
 };
 
